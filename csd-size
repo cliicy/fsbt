@@ -1,0 +1,54 @@
+#!/bin/bash
+
+export scale=0
+
+function sec2size () {
+    sec_cnt=$1
+    size_unit=GiB
+    size_num=0
+    unit_list=('GiB' 'MiB' 'KiB')
+    factor_list=('2/1024/1024' '2/1024' '2')
+    for((i=0; i < ${#unit_list[@]}; i++));
+    do
+        size_unit=${unit_list[${i}]}
+        size_num=`awk 'BEGIN{printf "%.'${scale}'f\n", ('${sec_cnt}'/'${factor_list[${i}]}')}'`
+        if [ `awk 'BEGIN{print ('${size_num}'>1)}'` = 1 ]; 
+        then
+            break
+        fi
+    done
+
+    echo ${size_num} ${size_unit}
+}
+
+help_str="Usage:\n\tcsd-size.sh csd_dev_name\nExample:\n\tcsd-size.sh sfdv0n1"
+dev=$1
+
+if [ "${dev}" == "" ];
+then
+    echo -e ${help_str};
+    echo -e '\nNo device name given, default to use name "sfdv0n1".\n'
+    dev=sfdv0n1
+fi
+
+ls /dev/${dev} >/dev/null 2>&1; if [ $? -ne 0 ]; then echo "Device ${dev} does not exist"; exit 2; fi
+
+stat_path=/sys/block/${dev}/sfx_smart_features/sfx_capacity_stat
+result_ary=($(grep -E "[0-9]+" ${stat_path} | cut -d, -f1))
+
+if [ ${#result_ary[@]} -lt 4 ]; then echo "Invalid input file \"${stat_path}\", is format changed again?"; exit 3; fi
+
+free_size=($(sec2size ${result_ary[0]}))
+used_size=($(sec2size ${result_ary[1]}))
+logical_size=($(sec2size ${result_ary[2]}))
+total_size=($(sec2size $((${result_ary[0]}+${result_ary[1]}))))
+comp_ratio=${result_ary[3]}
+
+printf "Device            - %s\n" /dev/${dev}
+printf "Total capacity    - %8.${scale}f %s\n" ${total_size[@]}
+printf "Used space        - %8.${scale}f %s\n" ${used_size[@]}
+printf "Free space        - %8.${scale}f %s\n" ${free_size[@]}
+printf "Logical data size - %8.${scale}f %s\n" ${logical_size[@]}
+printf "Compression ratio - %8.2f %s\n" ${comp_ratio} "(logical data size / used space)"
+echo
+
